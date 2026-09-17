@@ -16,7 +16,8 @@ stay pure-Python while still offering compiled, numba-free fast paths.
 
 | Estimator | Compute API | Notes |
 |-----------|-------------|-------|
-| Multivariate MiniRocket | `sktime_cython.fit` / `transform` | numba-free; equivalent to `MiniRocketMultivariate`, no JIT warmup |
+| Multivariate MiniRocket | `sktime_cython.transformations.rocket.rocket_fit` / `rocket_transform` | numba-free; equivalent to `MiniRocketMultivariate`, no JIT warmup |
+| Multivariate MultiRocket | `sktime_cython.transformations.rocket.multirocket_fit` / `multirocket_transform` | numba-free; equivalent to `MultiRocketMultivariate`, no JIT warmup |
 
 Logic for further `sktime` cython based estimators should be added in this package,
 for a recipe, see the [extension guide](https://github.com/sktime/sktime-cython#adding-an-estimator) below.
