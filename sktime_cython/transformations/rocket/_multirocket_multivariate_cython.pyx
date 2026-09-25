@@ -95,12 +95,10 @@ cdef void _one(
                 for t in range(n_timepoints):
                     C_gamma[base + t] = 0.0
 
-        # gamma_index 0..3. TODO(sktime#11291): reproduces an upstream defect on
-        # purpose -- numba computes `end` from the *raw* series length in both
-        # passes (``_transform`` line 877, and line 445 of the univariate
-        # module), so for the differenced pass the window sits one sample
-        # further left. When sktime fixes it, `raw_n_timepoints` goes away and
-        # `end = n_timepoints - padding` in both passes.
+        # gamma_index 0..3. The caller passes raw_n_timepoints == n_timepoints
+        # for the corrected transform; in the original implementation the
+        # differenced pass receives the undifferenced length here, which sits
+        # its windows one sample further left (sktime#11291).
         end = raw_n_timepoints - padding
         # `end` stays within the row (and `n_valid` below stays positive) because
         # dilation >= 1 and 8 * dilation < n_timepoints; boundscheck is off here,
@@ -221,16 +219,9 @@ cdef void _one(
                     )
 
             fis = fie
-            # TODO(sktime#11291): this reproduces an upstream defect on purpose.
-            # https://github.com/sktime/sktime/issues/11291
-            # numba advances the combination/channel cursors in the raw pass only
-            # (``_transform`` line 990 omits both), so its differenced pass reuses
-            # combination 0's channel selection for every kernel. When sktime
-            # fixes it, drop `advance_combination`, always advance, and pass each
-            # pass its OWN channel arrays (the fix also has to unpack
-            # ``parameters1``'s, which line 431 currently discards) -- otherwise
-            # the two disagree whenever the halves get different dilation counts,
-            # e.g. any series of length 65 (ERing) at the default num_kernels.
+            # the original implementation does not advance these in the
+            # differenced pass, so every kernel there reuses the first
+            # combination's channel selection (sktime#11291).
             if advance_combination:
                 combination_index += 1
                 ncs = nce
@@ -244,13 +235,21 @@ def transform(
     int[::1] dilations,
     int[::1] num_features_per_dilation,
     float[::1] biases,
+    int[::1] num_channels_per_combination1,
+    int[::1] channel_indices1,
     int[::1] dilations1,
     int[::1] num_features_per_dilation1,
     float[::1] biases1,
     int num_features_per_kernel,
+    bint original_implementation,
 ):
     """Port of ``_transform``. X is (n_instances, n_columns, n_timepoints);
-        X1 is (n_instances, n_columns, n_timepoints-1)."""
+        X1 is (n_instances, n_columns, n_timepoints-1).
+
+    ``original_implementation`` reproduces sktime's reference behaviour for the
+    differenced pass: windows sized from the undifferenced length, cursors not
+    advanced, and the base pass's channel selection reused.
+    """
     cdef int n_instances = X.shape[0]
     cdef int n_columns = X.shape[1]
     cdef int n_timepoints = X.shape[2]
@@ -298,13 +297,22 @@ def transform(
                 num_features, 0, True,
                 C_alpha, C_gamma, C, feat,
             )
-            _one(
-                X1, ex, n_columns, n_timepoints - 1, n_timepoints,
-                num_channels_per_combination, channel_indices,
-                dilations1, num_features_per_dilation1, biases1,
-                num_features, num_features_per_transform, False,
-                C_alpha, C_gamma, C, feat,
-            )
+            if original_implementation:
+                _one(
+                    X1, ex, n_columns, n_timepoints - 1, n_timepoints,
+                    num_channels_per_combination, channel_indices,
+                    dilations1, num_features_per_dilation1, biases1,
+                    num_features, num_features_per_transform, False,
+                    C_alpha, C_gamma, C, feat,
+                )
+            else:
+                _one(
+                    X1, ex, n_columns, n_timepoints - 1, n_timepoints - 1,
+                    num_channels_per_combination1, channel_indices1,
+                    dilations1, num_features_per_dilation1, biases1,
+                    num_features, num_features_per_transform, True,
+                    C_alpha, C_gamma, C, feat,
+                )
 
     finally:
         free(C_alpha)

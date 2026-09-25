@@ -17,6 +17,16 @@ from sktime_cython.transformations.rocket._multirocket import (
 
 _HAS_SKTIME = importlib.util.find_spec("sktime") is not None
 
+
+def _sktime_has_flag():
+    """Whether the installed sktime exposes ``original_implementation``."""
+    if not _HAS_SKTIME:
+        return False
+    from sktime.transformations.rocket import MultiRocketMultivariate
+
+    return "original_implementation" in MultiRocketMultivariate.get_param_names()
+
+
 # At large num_kernels a value can sit on the bias threshold and be classified
 # differently by the two float32 summation orders, flipping the PPV/MPV/MIPV
 # triplet of one feature. Measured rate is ~2e-5 of elements; allow 1e-4.
@@ -29,16 +39,29 @@ def _panel(seed, n_columns=3, n_timepoints=60):
 
 
 @pytest.mark.skipif(not _HAS_SKTIME, reason="sktime not installed (dev extra)")
+@pytest.mark.parametrize("original_implementation", [False, True])
 @pytest.mark.parametrize("n_columns", [1, 4])
 @pytest.mark.parametrize(
     "num_kernels,max_dilations_per_kernel,random_state,n_timepoints",
     [(84, 32, 42, 60), (168, 16, 7, 60), (6250, 32, 0, 137)],
 )
 def test_cython_matches_numba(
-    n_columns, num_kernels, max_dilations_per_kernel, random_state, n_timepoints
+    n_columns,
+    num_kernels,
+    max_dilations_per_kernel,
+    random_state,
+    n_timepoints,
+    original_implementation,
 ):
     """Cython transform must match the numba implementation (groundtruth)."""
     from sktime.transformations.rocket import MultiRocketMultivariate
+
+    kwargs = {}
+    if _sktime_has_flag():
+        kwargs["original_implementation"] = original_implementation
+    elif not original_implementation:
+        # sktime before the fix only implements the original behaviour
+        pytest.skip("installed sktime predates original_implementation")
 
     X = _panel(random_state, n_columns=n_columns, n_timepoints=n_timepoints)
 
@@ -46,6 +69,7 @@ def test_cython_matches_numba(
         num_kernels=num_kernels,
         max_dilations_per_kernel=max_dilations_per_kernel,
         random_state=random_state,
+        **kwargs,
     ).fit_transform(X)
 
     params = multirocket_fit(
@@ -54,7 +78,9 @@ def test_cython_matches_numba(
         max_dilations_per_kernel=max_dilations_per_kernel,
         random_state=random_state,
     )
-    cython_out = multirocket_transform(X, params)
+    cython_out = multirocket_transform(
+        X, params, original_implementation=original_implementation
+    )
 
     assert cython_out.shape == numba_out.shape
     close = np.isclose(cython_out, numba_out.to_numpy(), rtol=1e-4, atol=1e-5)

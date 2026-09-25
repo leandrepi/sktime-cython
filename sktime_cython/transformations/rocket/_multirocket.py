@@ -145,7 +145,12 @@ def multirocket_fit(
 
 
 def multirocket_transform(
-    X, parameters, n_features_per_kernel=4, normalise=False, n_jobs=1
+    X,
+    parameters,
+    n_features_per_kernel=4,
+    normalise=False,
+    n_jobs=1,
+    original_implementation=False,
 ):
     """Apply a fitted MultiRocket transform.
 
@@ -163,6 +168,9 @@ def multirocket_transform(
     n_jobs : int, default=1
         threads for the GIL-releasing Cython kernel over disjoint instance
         chunks. ``-1`` (or out of range) uses all processors.
+    original_implementation : bool, default=False
+        whether to reproduce sktime's reference behaviour for the differenced
+        pass rather than the corrected transform; see sktime#11291.
 
     Returns
     -------
@@ -178,12 +186,12 @@ def multirocket_transform(
     _check_dilations(parameters[0][2], X.shape[2], "dilations")
     _check_dilations(parameters[1][2], X1.shape[2], "dilations1")
 
-    # [2:] drops parameters[1]'s own channel arrays, reproducing an upstream
-    # defect on purpose: the numba reference reuses the raw channel selection
-    # for the differenced pass. See https://github.com/sktime/sktime/issues/11291
-    # -- when it is fixed, pass all five of parameters[1] (13 kernel args) and
-    # widen the transform signature and the .pyi accordingly.
-    args = (*parameters[0], *parameters[1][2:], n_features_per_kernel)
+    args = (
+        *parameters[0],
+        *parameters[1],
+        n_features_per_kernel,
+        original_implementation,
+    )
     n_instances = X.shape[0]
 
     if n_jobs < 1 or n_jobs > multiprocessing.cpu_count():
