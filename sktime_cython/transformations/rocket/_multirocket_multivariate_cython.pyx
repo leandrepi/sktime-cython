@@ -67,7 +67,8 @@ cdef void _one(
     cdef float* _c
     cdef int ppv, last_val, stretch, max_stretch
     cdef int64_t mean_index, feature_index
-    cdef float bias, x
+    cdef float bias
+    cdef floating x
     cdef double mean
 
     fis = 0
@@ -351,7 +352,7 @@ def fit_biases(
     cdef int padding, dilation, start, end
     cdef int comb, ncs, nce, ncc
     cdef int i0, i1, i2
-    cdef float x
+    cdef floating x
 
     try:
         comb = 0

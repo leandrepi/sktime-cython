@@ -71,13 +71,21 @@ def _biases_from_C(C, quantiles, num_features_per_dilation, num_kernels):
     combination = np.repeat(
         np.arange(len(features_per_combination)), features_per_combination
     )
-    S = np.sort(C, axis=1)
-    position = quantiles * (S.shape[1] - 1)
-    lower = np.floor(position).astype(np.intp)
-    upper = np.minimum(lower + 1, S.shape[1] - 1)
-    fraction = position - lower
+    # numba's np.quantile, op for op (numba/np/arraymath.py): it promotes both
+    # operands to float64, scales the quantile to a percentile and back, and
+    # interpolates between ranks f-1 and f. Matching it exactly matters because
+    # a bias landing on a repeated convolution value would otherwise
+    # reclassify a whole tied group of samples.
+    S = np.sort(C, axis=1).astype(np.float64)
+    n_timepoints = S.shape[1]
+    percentile = quantiles.astype(np.float64) * 100.0
+    rank = 1.0 + (n_timepoints - 1) * (percentile / 100.0)
+    floor = np.floor(rank)
+    weight = rank - floor
+    lower = (floor - 1.0).astype(np.intp)
+    upper = np.minimum(lower + 1, n_timepoints - 1)
     return (
-        S[combination, lower] * (1 - fraction) + S[combination, upper] * fraction
+        S[combination, lower] * (1 - weight) + S[combination, upper] * weight
     ).astype(np.float32)
 
 
